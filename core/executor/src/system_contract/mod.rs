@@ -1,5 +1,6 @@
 mod image_cell;
 mod native_token;
+mod sponsor_gas;
 
 pub use crate::system_contract::native_token::NativeTokenContract;
 
