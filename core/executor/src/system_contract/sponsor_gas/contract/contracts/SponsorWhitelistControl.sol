@@ -3,6 +3,18 @@
 pragma solidity >=0.8.0;
 
 contract SponsorWhitelistControl {
+
+    struct SponsorInfo {
+        /// This is the address of the sponsor for gas cost of the contract.
+        address sponsor_for_gas;
+        /// This is the upper bound of sponsor gas cost per tx.
+        uint256 sponsor_gas_bound;
+        /// This is the amount of tokens sponsor for gas cost to the contract.
+        uint256 sponsor_balance_for_gas;
+    }
+
+    mapping(address => SponsorInfo) sponsor_infos;
+
     /*** Query Functions ***/
     /**
      * @dev get gas sponsor address of specific contract

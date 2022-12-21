@@ -30,16 +30,13 @@ pub mod sponsor_whitelist_control {
     }
     impl<M> std::ops::Deref for SponsorWhitelistControl<M> {
         type Target = ethers::contract::Contract<M>;
-
         fn deref(&self) -> &Self::Target {
             &self.0
         }
     }
     impl<M> std::fmt::Debug for SponsorWhitelistControl<M> {
         fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.debug_tuple(stringify!(SponsorWhitelistControl))
-                .field(&self.address())
-                .finish()
+            f.debug_tuple(stringify!(SponsorWhitelistControl)).field(&self.address()).finish()
         }
     }
     impl<M: ethers::providers::Middleware> SponsorWhitelistControl<M> {
@@ -57,7 +54,6 @@ pub mod sponsor_whitelist_control {
             )
             .into()
         }
-
         #[doc = "Calls the contract's `addPrivilege` (0x10128d3e) function"]
         pub fn add_privilege(
             &self,
@@ -67,7 +63,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([16, 18, 141, 62], p0)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `getSponsorForGas` (0x33a1af31) function"]
         pub fn get_sponsor_for_gas(
             &self,
@@ -77,7 +72,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([51, 161, 175, 49], contract_addr)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `getSponsoredBalanceForGas` (0xb3b28fac) function"]
         pub fn get_sponsored_balance_for_gas(
             &self,
@@ -87,7 +81,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([179, 178, 143, 172], contract_addr)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `getSponsoredGasFeeUpperBound` (0xd665f9dd) function"]
         pub fn get_sponsored_gas_fee_upper_bound(
             &self,
@@ -97,7 +90,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([214, 101, 249, 221], contract_addr)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `isAllWhitelisted` (0x79b47faa) function"]
         pub fn is_all_whitelisted(
             &self,
@@ -107,7 +99,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([121, 180, 127, 170], contract_addr)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `isWhitelisted` (0xb6b35272) function"]
         pub fn is_whitelisted(
             &self,
@@ -118,7 +109,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([182, 179, 82, 114], (contract_addr, user))
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `removePrivilege` (0xd2932db6) function"]
         pub fn remove_privilege(
             &self,
@@ -128,7 +118,6 @@ pub mod sponsor_whitelist_control {
                 .method_hash([210, 147, 45, 182], p0)
                 .expect("method not found (this should never happen)")
         }
-
         #[doc = "Calls the contract's `setSponsorForGas` (0x3e3e6428) function"]
         pub fn set_sponsor_for_gas(
             &self,
@@ -183,10 +172,7 @@ pub mod sponsor_whitelist_control {
         ethers :: contract :: EthDisplay,
         Default,
     )]
-    #[ethcall(
-        name = "getSponsoredBalanceForGas",
-        abi = "getSponsoredBalanceForGas(address)"
-    )]
+    #[ethcall(name = "getSponsoredBalanceForGas", abi = "getSponsoredBalanceForGas(address)")]
     pub struct GetSponsoredBalanceForGasCall {
         pub contract_addr: ethers::core::types::Address,
     }
@@ -200,10 +186,7 @@ pub mod sponsor_whitelist_control {
         ethers :: contract :: EthDisplay,
         Default,
     )]
-    #[ethcall(
-        name = "getSponsoredGasFeeUpperBound",
-        abi = "getSponsoredGasFeeUpperBound(address)"
-    )]
+    #[ethcall(name = "getSponsoredGasFeeUpperBound", abi = "getSponsoredGasFeeUpperBound(address)")]
     pub struct GetSponsoredGasFeeUpperBoundCall {
         pub contract_addr: ethers::core::types::Address,
     }
@@ -234,7 +217,7 @@ pub mod sponsor_whitelist_control {
     #[ethcall(name = "isWhitelisted", abi = "isWhitelisted(address,address)")]
     pub struct IsWhitelistedCall {
         pub contract_addr: ethers::core::types::Address,
-        pub user:          ethers::core::types::Address,
+        pub user: ethers::core::types::Address,
     }
     #[doc = "Container type for all input parameters for the `removePrivilege` function with signature `removePrivilege(address[])` and selector `0xd2932db6`"]
     #[derive(
@@ -261,7 +244,7 @@ pub mod sponsor_whitelist_control {
     #[ethcall(name = "setSponsorForGas", abi = "setSponsorForGas(address,uint256)")]
     pub struct SetSponsorForGasCall {
         pub contract_addr: ethers::core::types::Address,
-        pub upper_bound:   ethers::core::types::U256,
+        pub upper_bound: ethers::core::types::U256,
     }
     #[derive(Debug, Clone, PartialEq, Eq, ethers :: contract :: EthAbiType)]
     pub enum SponsorWhitelistControlCalls {
@@ -293,18 +276,14 @@ pub mod sponsor_whitelist_control {
                     data.as_ref(),
                 )
             {
-                return Ok(SponsorWhitelistControlCalls::GetSponsoredBalanceForGas(
-                    decoded,
-                ));
+                return Ok(SponsorWhitelistControlCalls::GetSponsoredBalanceForGas(decoded));
             }
             if let Ok(decoded) =
                 <GetSponsoredGasFeeUpperBoundCall as ethers::core::abi::AbiDecode>::decode(
                     data.as_ref(),
                 )
             {
-                return Ok(SponsorWhitelistControlCalls::GetSponsoredGasFeeUpperBound(
-                    decoded,
-                ));
+                return Ok(SponsorWhitelistControlCalls::GetSponsoredGasFeeUpperBound(decoded));
             }
             if let Ok(decoded) =
                 <IsAllWhitelistedCall as ethers::core::abi::AbiDecode>::decode(data.as_ref())
