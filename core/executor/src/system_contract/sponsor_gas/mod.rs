@@ -1,1 +1,1 @@
-mod abi;
+pub(crate) mod abi;

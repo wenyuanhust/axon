@@ -25,9 +25,12 @@ pub fn system_contract_dispatch<B: Backend + ApplyBackend>(
     tx: &SignedTransaction,
 ) -> Option<TxResp> {
     let native_token_address = NativeTokenContract::ADDRESS;
+    let gasless_address = sponsor_gas::abi::ADDRESS;
     if let Some(addr) = tx.get_to() {
         if addr == native_token_address {
             return Some(NativeTokenContract::default().exec_(backend, tx));
+        } else if addr == gasless_address {
+            return Some(sponsor_gas::abi::GaslessContract::new().exec_(backend, tx));
         }
     }
 

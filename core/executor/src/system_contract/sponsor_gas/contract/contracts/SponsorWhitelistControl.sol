@@ -56,10 +56,10 @@ contract SponsorWhitelistControl {
     // ------------------------------------------------------------------------
     // Add commission privilege for address `user` to some contract.
     // ------------------------------------------------------------------------
-    function addPrivilege(address[] memory) public {}
+    function addPrivilege(address[] memory users) public {}
 
     // ------------------------------------------------------------------------
     // Remove commission privilege for address `user` from some contract.
     // ------------------------------------------------------------------------
-    function removePrivilege(address[] memory) public {}
+    function removePrivilege(address[] memory users) public {}
 }
