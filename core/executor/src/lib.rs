@@ -19,16 +19,23 @@ use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
 use arc_swap::ArcSwap;
+use ethers::abi::{AbiDecode, AbiEncode};
+use evm::backend::Apply;
 use evm::executor::stack::{MemoryStackState, PrecompileFn, StackExecutor, StackSubstateMetadata};
-use evm::CreateScheme;
+use evm::{CreateScheme, ExitReason, ExitSucceed};
 
 use common_merkle::TrieMerkle;
 use protocol::codec::ProtocolCodec;
 use protocol::traits::{ApplyBackend, Backend, Executor, ExecutorAdapter as Adapter};
 use protocol::types::{
-    data_gas_cost, Account, Config, ExecResp, Hasher, SignedTransaction, TransactionAction, TxResp,
-    ValidatorExtend, GAS_CALL_TRANSACTION, GAS_CREATE_TRANSACTION, H160, NIL_DATA, RLP_NULL, U256,
+    data_gas_cost, Account, Config, ExecResp, Hasher, Log, SignedTransaction, TransactionAction,
+    TxResp, ValidatorExtend, GAS_CALL_TRANSACTION, GAS_CREATE_TRANSACTION, H160, H256, NIL_DATA,
+    RLP_NULL, U256,
 };
+use system_contract::gasless::abi::sponsor_whitelist_control_abi::{
+    GetSponsorForGasCall, IsWhitelistedCall, SubstractSponsorBalanceCall,
+};
+use system_contract::gasless::abi::GASLESS_ADDRESS;
 
 use crate::precompiles::build_precompile_set;
 use crate::system_contract::{system_contract_dispatch, NativeTokenContract, SystemContract};
@@ -135,7 +142,7 @@ impl Executor for AxonExecutor {
             // Execute a transaction, if system contract dispatch return None, means the
             // transaction called EVM
             let mut r = system_contract_dispatch(backend, tx)
-                .unwrap_or_else(|| Self::evm_exec(backend, &config, &precompiles, tx));
+                .unwrap_or_else(|| Self::evm_exec(self, backend, &config, &precompiles, tx));
 
             r.logs = backend.get_logs();
             gas += r.gas_used;
@@ -188,19 +195,141 @@ impl Executor for AxonExecutor {
 }
 
 impl AxonExecutor {
+    fn call2<B: Backend>(
+        &self,
+        backend: &B,
+        gas_limit: u64,
+        from: Option<H160>,
+        to: Option<H160>,
+        value: U256,
+        data: Vec<u8>,
+    ) -> (
+        ExitReason,
+        impl IntoIterator<Item = Apply<impl IntoIterator<Item = (H256, H256)>>>,
+        impl IntoIterator<Item = Log>,
+    ) {
+        let config = Config::london();
+        let metadata = StackSubstateMetadata::new(gas_limit, &config);
+        let state = MemoryStackState::new(metadata, backend);
+        let precompiles = build_precompile_set();
+        let mut executor = StackExecutor::new_with_precompiles(state, &config, &precompiles);
+
+        let _base_gas = if to.is_some() {
+            GAS_CALL_TRANSACTION + data_gas_cost(&data)
+        } else {
+            GAS_CREATE_TRANSACTION + GAS_CALL_TRANSACTION + data_gas_cost(&data)
+        };
+
+        let (exit, _res) = if let Some(addr) = &to {
+            executor.transact_call(
+                from.unwrap_or_default(),
+                *addr,
+                value,
+                data,
+                gas_limit,
+                Vec::new(),
+            )
+        } else {
+            executor.transact_create(from.unwrap_or_default(), value, data, gas_limit, Vec::new())
+        };
+
+        let (values, logs) = executor.into_state().deconstruct();
+        (exit, values, logs)
+    }
+
+    pub fn is_sponsored<B: Backend + ApplyBackend + Adapter>(
+        &self,
+        backend: &mut B,
+        sender: &H160,
+        receiver: &Option<H160>,
+        gas_limit: &U256,
+        prepay_gas: &U256,
+    ) -> bool {
+        if let Some(receiver) = receiver {
+            // call isWhitelisted
+            let call_data: Vec<u8> = AbiEncode::encode(IsWhitelistedCall {
+                contract_addr: *receiver,
+                user:          *sender,
+            });
+            let rsp = Self::call(
+                self,
+                backend,
+                gas_limit.as_u64(),
+                Some(*sender),
+                Some(GASLESS_ADDRESS),
+                U256::default(),
+                call_data,
+            );
+            let is_sponsored: bool = AbiDecode::decode(rsp.ret).unwrap();
+            if !is_sponsored {
+                return false;
+            }
+
+            // call getSponsoredBalanceForGas
+            let call_data: Vec<u8> = AbiEncode::encode(GetSponsorForGasCall {
+                contract_addr: *receiver,
+            });
+            let rsp = Self::call(
+                self,
+                backend,
+                gas_limit.as_u64(),
+                Some(*sender),
+                Some(GASLESS_ADDRESS),
+                U256::default(),
+                call_data,
+            );
+            let sponsor_balance: U256 = AbiDecode::decode(rsp.ret).unwrap();
+            if sponsor_balance < *prepay_gas {
+                return false;
+            }
+
+            // call getSponsoredGasFeeUpperBound
+            let call_data: Vec<u8> = AbiEncode::encode(GetSponsorForGasCall {
+                contract_addr: *receiver,
+            });
+            let rsp = Self::call(
+                self,
+                backend,
+                gas_limit.as_u64(),
+                Some(*sender),
+                Some(GASLESS_ADDRESS),
+                U256::default(),
+                call_data,
+            );
+            let sponsor_bound: U256 = AbiDecode::decode(rsp.ret).unwrap();
+            if sponsor_bound < *gas_limit {
+                return false;
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn evm_exec<B: Backend + ApplyBackend + Adapter>(
+        &self,
         backend: &mut B,
         config: &Config,
         precompiles: &BTreeMap<H160, PrecompileFn>,
         tx: &SignedTransaction,
     ) -> TxResp {
         // Deduct pre-pay gas
-        let sender = tx.sender;
+        let mut sender = tx.sender;
         let tx_gas_price = backend.gas_price();
         let gas_limit = tx.transaction.unsigned.gas_limit();
         let prepay_gas = tx_gas_price * gas_limit;
 
         let mut account = backend.get_account(&sender);
+
+        let receiver = tx.transaction.unsigned.to();
+        let mut is_sponsored = false;
+        if self.is_sponsored(backend, &sender, &receiver, gas_limit, &prepay_gas) {
+            sender = GASLESS_ADDRESS;
+            account = backend.get_account(&GASLESS_ADDRESS);
+            is_sponsored = true;
+        }
+
         account.balance = account.balance.saturating_sub(prepay_gas);
         backend.save_account(&sender, &account);
 
@@ -263,13 +392,38 @@ impl AxonExecutor {
             let remain_gas = U256::from(remained_gas)
                 .checked_mul(tx_gas_price)
                 .unwrap_or_else(U256::max_value);
+
+            if is_sponsored {
+                sender = GASLESS_ADDRESS;
+                account = backend.get_account(&GASLESS_ADDRESS);
+                let actual_used_balance = prepay_gas.saturating_sub(remain_gas);
+
+                // call substractSponsorBalance
+                let call_data: Vec<u8> = AbiEncode::encode(SubstractSponsorBalanceCall {
+                    contract_addr: receiver.unwrap(),
+                    balance:       actual_used_balance,
+                });
+
+                let (exit, values, logs) = Self::call2(
+                    self,
+                    backend,
+                    gas_limit.as_u64(),
+                    Some(sender),
+                    Some(GASLESS_ADDRESS),
+                    U256::default(),
+                    call_data,
+                );
+                assert_eq!(exit, ExitReason::Succeed(ExitSucceed::Stopped));
+                backend.apply(values, logs, true);
+            }
+
             account.balance = account
                 .balance
                 .checked_add(remain_gas)
                 .unwrap_or_else(U256::max_value);
         }
 
-        backend.save_account(&tx.sender, &account);
+        backend.save_account(&sender, &account);
 
         TxResp {
             exit_reason:  exit,

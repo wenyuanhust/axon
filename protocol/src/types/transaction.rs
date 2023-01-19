@@ -33,7 +33,11 @@ impl UnsignedTransaction {
         }
     }
 
-    pub fn may_cost(&self) -> U256 {
+    pub fn may_cost(&self, is_sponsored: bool) -> U256 {
+        if is_sponsored {
+            return *self.value();
+        }
+
         if let Some(res) = self.gas_price().checked_mul(*self.gas_limit()) {
             return res
                 .checked_add(*self.value())

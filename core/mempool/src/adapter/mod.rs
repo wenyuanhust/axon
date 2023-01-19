@@ -262,6 +262,27 @@ where
             return self.check_system_script_tx_authorization(ctx, tx).await;
         }
 
+        let mut backend = AxonExecutorAdapter::from_root(
+            **CURRENT_STATE_ROOT.load(),
+            Arc::clone(&self.trie_db),
+            Arc::clone(&self.storage),
+            Default::default(),
+        )?;
+
+        let prepay_gas = tx
+            .transaction
+            .unsigned
+            .gas_price()
+            .checked_mul(*tx.transaction.unsigned.gas_limit())
+            .unwrap();
+        let is_sponsored = AxonExecutor::default().is_sponsored(
+            &mut backend,
+            &tx.sender,
+            &tx.get_to(),
+            &U256::max_value(),
+            &prepay_gas,
+        );
+
         let addr = &tx.sender;
         if let Some(res) = self.addr_nonce.get(addr) {
             if tx.transaction.unsigned.nonce() < &res.value().0 {
@@ -270,7 +291,7 @@ where
                     tx_nonce: tx.transaction.unsigned.nonce().as_u64(),
                 }
                 .into());
-            } else if res.value().1 < tx.transaction.unsigned.may_cost() {
+            } else if res.value().1 < tx.transaction.unsigned.may_cost(is_sponsored) {
                 return Err(MemPoolError::ExceedBalance {
                     tx_hash:         tx.transaction.hash,
                     account_balance: res.value().1,
@@ -281,13 +302,6 @@ where
                 return Ok(tx.transaction.unsigned.nonce() - res.value().0);
             }
         }
-
-        let backend = AxonExecutorAdapter::from_root(
-            **CURRENT_STATE_ROOT.load(),
-            Arc::clone(&self.trie_db),
-            Arc::clone(&self.storage),
-            Default::default(),
-        )?;
 
         let account = AxonExecutor::default().get_account(&backend, addr);
         self.addr_nonce
@@ -301,7 +315,7 @@ where
             .into());
         }
 
-        if account.balance < tx.transaction.unsigned.may_cost() {
+        if account.balance < tx.transaction.unsigned.may_cost(is_sponsored) {
             return Err(MemPoolError::ExceedBalance {
                 tx_hash:         tx.transaction.hash,
                 account_balance: account.balance,
