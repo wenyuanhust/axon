@@ -3,12 +3,12 @@ mod system_script;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use ethers::abi::{AbiEncode, AbiDecode};
+use ethers::abi::{AbiDecode, AbiEncode};
 use evm::backend::{MemoryAccount, MemoryBackend, MemoryVicinity};
 use evm::Config;
 
 use protocol::types::{
-    Bytes, Eip1559Transaction, ExitReason, ExitSucceed, Public, SignatureComponents,
+    ApplyBackend, Bytes, Eip1559Transaction, ExitReason, ExitSucceed, Public, SignatureComponents,
     SignedTransaction, TransactionAction, UnsignedTransaction, UnverifiedTransaction, H160, H256,
     MAX_BLOCK_GAS_LIMIT, U256,
 };
@@ -199,22 +199,8 @@ fn test_simplestorage() {
     // ]);
 }
 
-#[test]
-fn test_gasless() {
-    let mut state = BTreeMap::new();
+fn deploy_sponsor_contract(backend: &mut MemoryBackend) {
     let sender = H160::from_str("0xf000000000000000000000000000000000000000").unwrap();
-    state.insert(
-        sender,
-        MemoryAccount {
-            nonce:   U256::one(),
-            balance: U256::max_value(),
-            storage: BTreeMap::new(),
-            code:    Vec::new(),
-        },
-    );
-    let vicinity = gen_vicinity();
-    let mut backend = MemoryBackend::new(&vicinity, state);
-
     let executor = EvmExecutor::default();
     let config = Config::london();
     let precompiles = build_precompile_set();
@@ -232,7 +218,7 @@ fn test_gasless() {
     tx.transaction
         .unsigned
         .set_action(TransactionAction::Create);
-    let r = executor.inner_exec(&mut backend, &config, MAX_BLOCK_GAS_LIMIT, &precompiles, tx);
+    let r = executor.inner_exec(backend, &config, MAX_BLOCK_GAS_LIMIT, &precompiles, tx);
     assert_eq!(r.exit_reason, ExitReason::Succeed(ExitSucceed::Returned));
     assert!(r.ret.is_empty());
     // assert_eq!(r.remain_gas, 29898759);
@@ -241,11 +227,29 @@ fn test_gasless() {
     // 0xc15d2ba57d126e6603240e89437efd419ce329d2, you can get the address by
     // `println!("{:?}", backend.state().keys());`
     println!("{:?}", backend.state().keys());
-    let sponsor_contract_addr = H160::from_str("0xc15d2ba57d126e6603240e89437efd419ce329d2").unwrap();
+}
 
+#[test]
+fn test_gasless_set_sponsor_for_gas() {
+    let sender = H160::from_str("0xf000000000000000000000000000000000000000").unwrap();
+    let sponsor_contract_addr =
+        H160::from_str("0xc15d2ba57d126e6603240e89437efd419ce329d2").unwrap();
     // let's call isWhitelisted(address contractAddr, address user) by exec
     let contract_addr = H160::from_str("0xff00000000000000000000000000000000000000").unwrap();
     let user = H160::from_str("0xff00000000000000000000000000000000000001").unwrap();
+
+    let mut state = BTreeMap::new();
+    state.insert(sender, MemoryAccount {
+        nonce:   U256::one(),
+        balance: U256::max_value(),
+        storage: BTreeMap::new(),
+        code:    Vec::new(),
+    });
+    let vicinity = gen_vicinity();
+    let mut backend = MemoryBackend::new(&vicinity, state);
+
+    deploy_sponsor_contract(&mut backend);
+
     let call_data = gasless::abi::sponsor_whitelist_control_abi::IsWhitelistedCall {
         contract_addr,
         user,
@@ -266,9 +270,10 @@ fn test_gasless() {
     assert_eq!(false, is_sponsored);
 
     // let's call setSponsorForGas(address contractAddr, uint upperBound) by exec
+    let sponsor_upper_bound = U256::from(10000);
     let call_data = gasless::abi::sponsor_whitelist_control_abi::SetSponsorForGasCall {
         contract_addr,
-        upper_bound: U256::from(10000),
+        upper_bound: sponsor_upper_bound,
     };
     let call_data: Vec<u8> = AbiEncode::encode(call_data).into();
     let executor = AxonExecutor::default();
@@ -278,13 +283,27 @@ fn test_gasless() {
         Some(sender),
         Some(sponsor_contract_addr),
         U256::from(100000),
-        call_data,
+        call_data.clone(),
     );
     assert_eq!(r.exit_reason, ExitReason::Succeed(ExitSucceed::Stopped));
 
-    // let's call addPrivilege(address[] memory users) by exec
-    let call_data =
-        gasless::abi::sponsor_whitelist_control_abi::AddPrivilegeCall { users: vec![user] };
+    let (exit, values, logs) = executor.call2(
+        &backend,
+        u64::MAX,
+        Some(sender),
+        Some(sponsor_contract_addr),
+        U256::from(100000),
+        call_data,
+    );
+    if exit.is_succeed() {
+        println!("setSponsorForGas success");
+        backend.apply(values, logs, true);
+    }
+
+    // let's call getSponsoredGasFeeUpperBound(address contractAddr) by exec
+    let call_data = gasless::abi::sponsor_whitelist_control_abi::GetSponsoredGasFeeUpperBoundCall {
+        contract_addr,
+    };
     let call_data: Vec<u8> = AbiEncode::encode(call_data).into();
     // let executor = AxonExecutor::default();
     let r = executor.call(
@@ -293,9 +312,64 @@ fn test_gasless() {
         Some(contract_addr),
         Some(sponsor_contract_addr),
         U256::default(),
-        call_data,
+        call_data.clone(),
+    );
+    assert_eq!(r.exit_reason, ExitReason::Succeed(ExitSucceed::Returned));
+    let upper_bound: U256 = AbiDecode::decode(r.ret).unwrap();
+    println!("upper_bound: {}", upper_bound);
+    assert_eq!(upper_bound, sponsor_upper_bound);
+}
+
+#[test]
+fn test_gasless_add_privilege() {
+    let sender = H160::from_str("0xf000000000000000000000000000000000000000").unwrap();
+    let sponsor_contract_addr =
+        H160::from_str("0xc15d2ba57d126e6603240e89437efd419ce329d2").unwrap();
+    let contract_addr = H160::from_str("0xff00000000000000000000000000000000000000").unwrap();
+    let user = H160::from_str("0xff00000000000000000000000000000000000001").unwrap();
+
+    let mut state = BTreeMap::new();
+    state.insert(sender, MemoryAccount {
+        nonce:   U256::one(),
+        balance: U256::max_value(),
+        storage: BTreeMap::new(),
+        code:    Vec::new(),
+    });
+    let vicinity = gen_vicinity();
+    let mut backend = MemoryBackend::new(&vicinity, state);
+
+    deploy_sponsor_contract(&mut backend);
+
+    // let's call addPrivilege(address[] memory users) by exec
+    let call_data =
+        gasless::abi::sponsor_whitelist_control_abi::AddPrivilegeCall { users: vec![user] };
+    let call_data: Vec<u8> = AbiEncode::encode(call_data).into();
+    let executor = AxonExecutor::default();
+    let r = executor.call(
+        &backend,
+        u64::MAX,
+        Some(contract_addr),
+        Some(sponsor_contract_addr),
+        U256::default(),
+        call_data.clone(),
     );
     assert_eq!(r.exit_reason, ExitReason::Succeed(ExitSucceed::Stopped));
+
+    // let (exit, values, logs) = executor.call2(
+    //     &backend,
+    //     u64::MAX,
+    //     Some(sender),
+    //     Some(sponsor_contract_addr),
+    //     U256::from(100000),
+    //     call_data,
+    // );
+    // // assert_eq!(exit, ExitReason::Succeed(ExitSucceed::Stopped));
+    // if exit.is_succeed() {
+    //     println!("addPrivilege");
+    //     backend.apply(values, logs, true);
+    // } else {
+    //     println!("addPrivilege fail, exit: {:?}", exit);
+    // }
 
     // let's call isWhitelisted(address contractAddr, address user) by exec
     let call_data = gasless::abi::sponsor_whitelist_control_abi::IsWhitelistedCall {
@@ -314,10 +388,8 @@ fn test_gasless() {
         call_data,
     );
     assert_eq!(r.exit_reason, ExitReason::Succeed(ExitSucceed::Returned));
-    assert_eq!(r.ret, vec![
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0
-    ]);
+    let is_sponsored: bool = AbiDecode::decode(r.ret).unwrap();
+    assert_eq!(false, is_sponsored);
 }
 
 // #[test]

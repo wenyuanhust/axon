@@ -20,6 +20,7 @@ use std::iter::FromIterator;
 
 use arc_swap::ArcSwap;
 use ethers::abi::{AbiDecode, AbiEncode};
+use evm::backend::Apply;
 use evm::executor::stack::{MemoryStackState, PrecompileFn, StackExecutor, StackSubstateMetadata};
 use evm::{CreateScheme, ExitReason, ExitSucceed};
 
@@ -27,8 +28,9 @@ use common_merkle::TrieMerkle;
 use protocol::codec::ProtocolCodec;
 use protocol::traits::{ApplyBackend, Backend, Executor, ExecutorAdapter as Adapter};
 use protocol::types::{
-    data_gas_cost, Account, Config, ExecResp, Hasher, SignedTransaction, TransactionAction, TxResp,
-    ValidatorExtend, GAS_CALL_TRANSACTION, GAS_CREATE_TRANSACTION, H160, NIL_DATA, RLP_NULL, U256,
+    data_gas_cost, Account, Config, ExecResp, Hasher, Log, SignedTransaction, TransactionAction,
+    TxResp, ValidatorExtend, GAS_CALL_TRANSACTION, GAS_CREATE_TRANSACTION, H160, H256, NIL_DATA,
+    RLP_NULL, U256,
 };
 use system_contract::gasless::abi::sponsor_whitelist_control_abi::{
     GetSponsorForGasCall, IsWhitelistedCall, SubstractSponsorBalanceCall,
@@ -193,6 +195,48 @@ impl Executor for AxonExecutor {
 }
 
 impl AxonExecutor {
+    fn call2<B: Backend>(
+        &self,
+        backend: &B,
+        gas_limit: u64,
+        from: Option<H160>,
+        to: Option<H160>,
+        value: U256,
+        data: Vec<u8>,
+    ) -> (
+        ExitReason,
+        impl IntoIterator<Item = Apply<impl IntoIterator<Item = (H256, H256)>>>,
+        impl IntoIterator<Item = Log>,
+    ) {
+        let config = Config::london();
+        let metadata = StackSubstateMetadata::new(gas_limit, &config);
+        let state = MemoryStackState::new(metadata, backend);
+        let precompiles = build_precompile_set();
+        let mut executor = StackExecutor::new_with_precompiles(state, &config, &precompiles);
+
+        let _base_gas = if to.is_some() {
+            GAS_CALL_TRANSACTION + data_gas_cost(&data)
+        } else {
+            GAS_CREATE_TRANSACTION + GAS_CALL_TRANSACTION + data_gas_cost(&data)
+        };
+
+        let (exit, _res) = if let Some(addr) = &to {
+            executor.transact_call(
+                from.unwrap_or_default(),
+                *addr,
+                value,
+                data,
+                gas_limit,
+                Vec::new(),
+            )
+        } else {
+            executor.transact_create(from.unwrap_or_default(), value, data, gas_limit, Vec::new())
+        };
+
+        let (values, logs) = executor.into_state().deconstruct();
+        (exit, values, logs)
+    }
+
     pub fn is_sponsored<B: Backend + ApplyBackend + Adapter>(
         &self,
         backend: &mut B,
@@ -360,7 +404,7 @@ impl AxonExecutor {
                     balance:       actual_used_balance,
                 });
 
-                let rsp = Self::call(
+                let (exit, values, logs) = Self::call2(
                     self,
                     backend,
                     gas_limit.as_u64(),
@@ -369,7 +413,8 @@ impl AxonExecutor {
                     U256::default(),
                     call_data,
                 );
-                assert_eq!(rsp.exit_reason, ExitReason::Succeed(ExitSucceed::Stopped));
+                assert_eq!(exit, ExitReason::Succeed(ExitSucceed::Stopped));
+                backend.apply(values, logs, true);
             }
 
             account.balance = account
