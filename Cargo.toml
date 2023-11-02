@@ -41,6 +41,7 @@ members = [
     "core/storage",
     "devtools/abi-generator",
     "devtools/axon-tools",
+    "devtools/axon-tools-riscv",
     "devtools/keypair",
     "protocol",
 ]

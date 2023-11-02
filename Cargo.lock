@@ -364,6 +364,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "axon-tools-riscv"
+version = "0.1.1"
+dependencies = [
+ "bit-vec",
+ "blst",
+ "bytes",
+ "cita_trie 4.1.0",
+ "derive_more",
+ "ethereum",
+ "ethereum-types 0.14.1",
+ "faster-hex 0.8.1",
+ "log",
+ "overlord",
+ "rand 0.8.5",
+ "rlp",
+ "rlp-derive",
+ "serde",
+ "serde_json",
+ "tiny-keccak",
+]
+
+[[package]]
 name = "axum"
 version = "0.6.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
