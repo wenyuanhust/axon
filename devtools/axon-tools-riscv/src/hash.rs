@@ -9,14 +9,3 @@ pub fn keccak_256(data: &[u8]) -> [u8; 32] {
     hasher.finalize(&mut ret);
     ret
 }
-
-#[derive(Default)]
-pub(crate) struct InnerKeccak;
-
-impl cita_trie::Hasher for InnerKeccak {
-    const LENGTH: usize = 32;
-
-    fn digest(&self, data: &[u8]) -> Vec<u8> {
-        keccak_256(data).to_vec()
-    }
-}

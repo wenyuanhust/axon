@@ -1,4 +1,5 @@
-use crate::types::{BlockVersion, Proposal, Vote};
+#[cfg(feature = "impl-rlp")]
+use crate::types::{BlockVersion, Proposal};
 #[cfg(feature = "impl-rlp")]
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
 
@@ -19,17 +20,17 @@ impl Decodable for BlockVersion {
     }
 }
 
-#[cfg(feature = "impl-rlp")]
-impl Encodable for Vote {
-    fn rlp_append(&self, s: &mut RlpStream) {
-        let vote_type: u8 = self.vote_type;
-        s.begin_list(4)
-            .append(&self.height)
-            .append(&self.round)
-            .append(&vote_type)
-            .append(&self.block_hash.to_vec());
-    }
-}
+// #[cfg(feature = "impl-rlp")]
+// impl Encodable for Vote {
+//     fn rlp_append(&self, s: &mut RlpStream) {
+//         let vote_type: u8 = self.vote_type;
+//         s.begin_list(4)
+//             .append(&self.height)
+//             .append(&self.round)
+//             .append(&vote_type)
+//             .append(&self.block_hash.to_vec());
+//     }
+// }
 
 #[cfg(feature = "impl-rlp")]
 impl Encodable for Proposal {

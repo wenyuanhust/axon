@@ -1,46 +1,27 @@
-use crate::error::TypesError;
-use alloc::vec::Vec;
-use bytes::{Bytes, BytesMut};
 use core::cmp::Ordering;
-use core::str::FromStr;
-use ethereum_types::{Bloom, H160, H256, U256};
-use faster_hex::withpfx_lowercase;
-
-#[cfg(feature = "impl-serde")]
-use serde::{Deserialize, Serialize};
-
-#[cfg(feature = "impl-rlp")]
-use rlp_derive::{RlpDecodable, RlpEncodable};
-
-#[cfg(feature = "hex")]
-use crate::hex::{hex_decode, hex_encode};
-#[cfg(feature = "hex")]
-use crate::Error;
-
-const HEX_PREFIX: &str = "0x";
-
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+use alloc::vec::Vec;
+use bytes::Bytes;
+pub use ethereum_types::{Bloom, H160, H256, H64, U256};
 // #[cfg(feature = "impl-rlp")]
-// #[derive(RlpEncodable, RlpDecodable)]
-pub struct Hex(Bytes);
+// use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
 
-// #[cfg(feature = "impl-rlp")]
-impl Hex {
-    pub fn as_bytes(&self) -> Bytes {
-        self.0.clone()
-    }
+pub const MAX_BLOCK_GAS_LIMIT: u64 = 30_000_000;
+pub const MAX_RPC_GAS_CAP: u64 = 50_000_000;
+pub const BASE_FEE_PER_GAS: u64 = 0x539;
+
+pub type Hash = H256;
+pub type MerkleRoot = Hash;
+pub type BlockNumber = u64;
+
+#[derive(Debug)]
+pub enum TypesError {
+    InvalidBlockVersion(u8),
 }
 
-impl From<Vec<u8>> for Hex {
-    fn from(bytes: Vec<u8>) -> Self {
-        let bytes = Bytes::from(bytes);
-        Hex(bytes)
-    }
-}
+// impl std::error::Error for TypesError {}
 
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg(feature = "impl-serde")]
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "impl-serde", derive(serde::Deserialize))]
 pub enum BlockVersion {
     #[default]
     V0,
@@ -57,7 +38,7 @@ impl From<BlockVersion> for u8 {
 impl TryFrom<u8> for BlockVersion {
     type Error = TypesError;
 
-    fn try_from(value: u8) -> Result<Self, TypesError> {
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(BlockVersion::V0),
             _ => Err(TypesError::InvalidBlockVersion(value)),
@@ -65,23 +46,16 @@ impl TryFrom<u8> for BlockVersion {
     }
 }
 
-pub type Hash = H256;
-pub type MerkleRoot = Hash;
-pub type BlockNumber = u64;
-
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
     feature = "impl-rlp",
     derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
 )]
-#[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "impl-serde", derive(serde::Deserialize))]
 pub struct ExtraData {
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "withpfx_lowercase::serialize",
-            deserialize_with = "withpfx_lowercase::deserialize"
-        )
+        serde(deserialize_with = "withpfx_lowercase::deserialize")
     )]
     pub inner: Bytes,
 }
@@ -91,7 +65,7 @@ pub struct ExtraData {
     feature = "impl-rlp",
     derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
 )]
-#[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "impl-serde", derive(serde::Deserialize))]
 pub struct AxonHeader {
     pub version:                  BlockVersion,
     pub prev_hash:                Hash,
@@ -103,18 +77,12 @@ pub struct AxonHeader {
     pub log_bloom:                Bloom,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u64"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub timestamp:                u64,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u64"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub number:                   BlockNumber,
     pub gas_used:                 U256,
@@ -127,18 +95,12 @@ pub struct AxonHeader {
     pub proof:                    Proof,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u32"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u32")
     )]
     pub call_system_script_count: u32,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u64"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub chain_id:                 u64,
 }
@@ -201,45 +163,34 @@ pub struct Proposal {
 pub struct Proof {
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u64"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub number:     u64,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "encode::serialize_uint",
-            deserialize_with = "decode::deserialize_hex_u64"
-        )
+        serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub round:      u64,
     pub block_hash: Hash,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "withpfx_lowercase::serialize",
-            deserialize_with = "withpfx_lowercase::deserialize"
-        )
+        serde(deserialize_with = "withpfx_lowercase::deserialize")
     )]
     pub signature:  Bytes,
     #[cfg_attr(
         feature = "impl-serde",
-        serde(
-            serialize_with = "withpfx_lowercase::serialize",
-            deserialize_with = "withpfx_lowercase::deserialize"
-        )
+        serde(deserialize_with = "withpfx_lowercase::deserialize")
     )]
     pub bitmap:     Bytes,
 }
 
 #[cfg(feature = "proof")]
-#[derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Validator {
-    pub pub_key:        Bytes,
+    pub bls_pub_key:    Bytes,
+    pub address:        H160,
     pub propose_weight: u32,
     pub vote_weight:    u32,
 }
@@ -256,13 +207,17 @@ impl core::cmp::PartialOrd for Validator {
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
 impl core::cmp::Ord for Validator {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.pub_key.cmp(&other.pub_key)
+        self.address.cmp(&other.address)
     }
 }
 
 #[cfg(feature = "proof")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
+#[cfg_attr(
+    feature = "impl-rlp",
+    derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
+)]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Vote {
     pub height:     u64,
@@ -283,119 +238,59 @@ impl Vote {
     }
 }
 
-#[derive(Default, Clone, Debug, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "impl-rlp",
-    derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
-)]
-#[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct MetadataVersion {
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub start: BlockNumber,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub end:   BlockNumber,
-}
-
-impl MetadataVersion {
-    pub fn new(start: BlockNumber, end: BlockNumber) -> Self {
-        MetadataVersion { start, end }
-    }
-
-    pub fn contains(&self, number: BlockNumber) -> bool {
-        self.start <= number && number <= self.end
-    }
-}
-
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "impl-rlp",
-    derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
-)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Metadata {
-    pub version:          MetadataVersion,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub epoch:            u64,
-    pub verifier_list:    Vec<ValidatorExtend>,
-    #[serde(skip_deserializing)]
-    pub propose_counter:  Vec<ProposeCount>,
-    pub consensus_config: ConsensusConfig,
+    pub version:         MetadataVersion,
+    pub epoch:           u64,
+    pub gas_limit:       u64,
+    pub gas_price:       u64,
+    pub interval:        u64,
+    pub verifier_list:   Vec<ValidatorExtend>,
+    pub propose_ratio:   u64,
+    pub prevote_ratio:   u64,
+    pub precommit_ratio: u64,
+    pub brake_ratio:     u64,
+    pub tx_num_limit:    u64,
+    pub max_tx_size:     u64,
+    #[cfg_attr(feature = "impl-serde", serde(skip_deserializing))]
+    pub propose_counter: Vec<ProposeCount>,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "impl-rlp",
-    derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
-)]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct ConsensusConfig {
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub gas_limit:       u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub interval:        u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub propose_ratio:   u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub prevote_ratio:   u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub precommit_ratio: u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub brake_ratio:     u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub tx_num_limit:    u64,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
-    pub max_tx_size:     u64,
+pub struct MetadataVersion {
+    pub start: u64,
+    pub end:   u64,
 }
 
-#[derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ProposeCount {
     pub address: H160,
-    #[cfg_attr(
-        feature = "impl-serde",
-        serde(deserialize_with = "decode::deserialize_hex_u64")
-    )]
     pub count:   u64,
 }
 
-#[derive(Clone, PartialEq, Eq, Default)]
-#[cfg_attr(
-    feature = "impl-rlp",
-    derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
-)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+// #[cfg(feature = "impl-rlp")]
+// #[derive(RlpEncodable, RlpDecodable)]
+pub struct Hex(Bytes);
+
+// #[cfg(feature = "impl-rlp")]
+impl Hex {
+    pub fn as_bytes(&self) -> Bytes {
+        self.0.clone()
+    }
+}
+
+impl From<Vec<u8>> for Hex {
+    fn from(bytes: Vec<u8>) -> Self {
+        let bytes = Bytes::from(bytes);
+        Hex(bytes)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValidatorExtend {
     pub bls_pub_key:    Hex,
@@ -415,40 +310,13 @@ pub struct ValidatorExtend {
 
 impl PartialOrd for ValidatorExtend {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        Some(self.cmp(&other))
     }
 }
 
 impl Ord for ValidatorExtend {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.pub_key.as_bytes().cmp(&other.pub_key.as_bytes())
-    }
-}
-
-impl From<ValidatorExtend> for Validator {
-    fn from(ve: ValidatorExtend) -> Self {
-        Validator {
-            pub_key:        ve.pub_key.as_bytes(),
-            propose_weight: ve.propose_weight,
-            vote_weight:    ve.vote_weight,
-        }
-    }
-}
-
-impl std::fmt::Debug for ValidatorExtend {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let bls_pub_key = self.bls_pub_key.as_string_trim0x();
-        let pk = if bls_pub_key.len() > 8 {
-            unsafe { bls_pub_key.get_unchecked(0..8) }
-        } else {
-            bls_pub_key.as_str()
-        };
-
-        write!(
-            f,
-            "bls public key {:?}, public key {:?}, address {:?} propose weight {}, vote weight {}",
-            pk, self.pub_key, self.address, self.propose_weight, self.vote_weight
-        )
+        self.address.cmp(&other.address)
     }
 }
 
@@ -468,155 +336,6 @@ pub struct CkbRelatedInfo {
     pub stake_smt_type_id:    H256,
     pub delegate_smt_type_id: H256,
     pub reward_smt_type_id:   H256,
-}
-
-#[cfg(feature = "impl-serde")]
-mod encode {
-    use ethereum_types::U256;
-    use serde::ser::Serializer;
-    static CHARS: &[u8] = b"0123456789abcdef";
-
-    fn to_hex_raw<'a>(v: &'a mut [u8], bytes: &[u8], skip_leading_zero: bool) -> &'a str {
-        debug_assert!(v.len() > 1 + bytes.len() * 2);
-
-        v[0] = b'0';
-        v[1] = b'x';
-
-        let mut idx = 2;
-        let first_nibble = bytes[0] >> 4;
-        if first_nibble != 0 || !skip_leading_zero {
-            v[idx] = CHARS[first_nibble as usize];
-            idx += 1;
-        }
-        v[idx] = CHARS[(bytes[0] & 0xf) as usize];
-        idx += 1;
-
-        for &byte in bytes.iter().skip(1) {
-            v[idx] = CHARS[(byte >> 4) as usize];
-            v[idx + 1] = CHARS[(byte & 0xf) as usize];
-            idx += 2;
-        }
-
-        // SAFETY: all characters come either from CHARS or "0x", therefore valid UTF8
-        unsafe { std::str::from_utf8_unchecked(&v[0..idx]) }
-    }
-
-    pub fn serialize_uint<S, U>(val: &U, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        U: Into<U256> + Copy,
-    {
-        let val: U256 = (*val).into();
-        let mut slice = [0u8; 2 + 64];
-        let mut bytes = [0u8; 32];
-        val.to_big_endian(&mut bytes);
-        let non_zero = bytes.iter().take_while(|b| **b == 0).count();
-        let bytes = &bytes[non_zero..];
-
-        if bytes.is_empty() {
-            s.serialize_str("0x0")
-        } else {
-            s.serialize_str(to_hex_raw(&mut slice, bytes, true))
-        }
-    }
-}
-
-#[cfg(feature = "impl-serde")]
-mod decode {
-    use ethereum_types::U256;
-    use serde::de::{Deserialize, Deserializer};
-
-    pub fn from_hex(hex: &str) -> Result<Vec<u8>, &'static str> {
-        let mut bytes = Vec::with_capacity((hex.len() + 1) / 2);
-
-        let mut start_i = 0;
-        if hex.len() % 2 != 0 {
-            let byte =
-                u8::from_str_radix(&hex[0..1], 16).map_err(|_| "Failed to parse hex string")?;
-            bytes.push(byte);
-            start_i = 1;
-        }
-
-        for i in (start_i..hex.len()).step_by(2) {
-            let end_i = if i + 2 > hex.len() { i + 1 } else { i + 2 };
-            let byte =
-                u8::from_str_radix(&hex[i..end_i], 16).map_err(|_| "Failed to parse hex string")?;
-            bytes.push(byte);
-        }
-
-        Ok(bytes)
-    }
-
-    pub fn deserialize_hex_u32<'de, D>(deserializer: D) -> Result<u32, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        if s == "0x0" {
-            return Ok(0);
-        }
-
-        if s.len() >= 2 && &s[0..2] == "0x" {
-            let bytes = from_hex(&s[2..]).map_err(serde::de::Error::custom)?;
-            let val = U256::from_big_endian(&bytes);
-            Ok(val.low_u32())
-        } else {
-            Err(serde::de::Error::custom("Invalid format"))
-        }
-    }
-
-    pub fn deserialize_hex_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        if s == "0x0" {
-            return Ok(0);
-        }
-
-        if s.len() >= 2 && &s[0..2] == "0x" {
-            let bytes = from_hex(&s[2..]).map_err(serde::de::Error::custom)?;
-            let val = U256::from_big_endian(&bytes);
-            Ok(val.low_u64())
-        } else {
-            Err(serde::de::Error::custom("Invalid format"))
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        #[cfg(all(
-            feature = "hex",
-            feature = "proof",
-            feature = "impl-serde",
-            feature = "impl-rlp"
-        ))]
-        #[test]
-        fn test_deserialize_hex_u64() {
-            use crate::types::MetadataVersion;
-
-            {
-                let json_str = r#"{"start": "0x0", "end": "0x7"}"#;
-                let my_struct: MetadataVersion = serde_json::from_str(json_str).unwrap();
-                assert_eq!(my_struct.start, 0x0);
-                assert_eq!(my_struct.end, 0x7);
-            }
-
-            {
-                let json_str = r#"{"start": "0x12", "end": "0x233"}"#;
-                let my_struct: MetadataVersion = serde_json::from_str(json_str).unwrap();
-                assert_eq!(my_struct.start, 0x12);
-                assert_eq!(my_struct.end, 0x233);
-            }
-
-            {
-                let json_str = r#"{"start": "0x67fed12", "end": "0x8ddefa09"}"#;
-                let my_struct: MetadataVersion = serde_json::from_str(json_str).unwrap();
-                assert_eq!(my_struct.start, 0x67fed12);
-                assert_eq!(my_struct.end, 0x8ddefa09);
-            }
-        }
-    }
 }
 
 #[cfg(test)]

@@ -8,19 +8,41 @@ use ethereum_types::H256;
 use rlp::Encodable;
 
 use crate::types::{AxonBlock, Proof, Proposal, ValidatorExtend, Vote};
-use crate::{error::Error, hash::InnerKeccak, keccak_256};
+use crate::{error::Error, keccak_256};
 
 const DST: &str = "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RONUL";
 
-pub fn verify_trie_proof(
-    root: H256,
-    key: &[u8],
-    proof: Vec<Vec<u8>>,
-) -> Result<Option<Vec<u8>>, Error> {
-    let value = cita_trie::verify_proof(&root.0, key, proof, InnerKeccak)?;
-    log::debug!("key: {:?}, value: {:?}", key, value);
-    Ok(value)
-}
+// pub fn verify_proof_by_proposal(
+//     proposal: Proposal,
+//     validator_list: &mut [Validator],
+//     proof: Proof,
+// ) -> Result<(), Error> {
+//     let raw_proposal = proposal.rlp_bytes();
+
+//     if keccak_256(&raw_proposal) != proof.block_hash.0 {
+//         return Err(Error::InvalidProofBlockHash);
+//     }
+
+//     let vote = Vote {
+//         height:     proof.number,
+//         round:      proof.round,
+//         vote_type:  2u8,
+//         block_hash: Bytes::from(proof.block_hash.0.to_vec()),
+//     };
+
+//     let hash_vote = keccak_256(rlp::encode(&vote).as_ref());
+//     let pks = extract_pks(&proof, validator_list)?;
+//     let pks = pks.iter().collect::<Vec<_>>();
+//     let c_pk = PublicKey::from_aggregate(&AggregatePublicKey::aggregate(&pks,
+// true)?);     let sig = Signature::from_bytes(&proof.signature)?;
+//     let res = sig.verify(true, &hash_vote, DST.as_bytes(), &[], &c_pk, true);
+
+//     if res == BLST_ERROR::BLST_SUCCESS {
+//         return Ok(());
+//     }
+
+//     Err(res.into())
+// }
 
 pub fn verify_proof(
     block: AxonBlock,
@@ -91,11 +113,6 @@ fn extract_pks(
         count += 1;
     }
 
-    log::debug!(
-        "extract_pks count: {}, validator len: {}",
-        count,
-        validator_list.len()
-    );
     if count * 3 <= validator_list.len() * 2 {
         return Err(Error::NotEnoughSignatures);
     }
