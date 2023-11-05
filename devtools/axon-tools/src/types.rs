@@ -1,9 +1,11 @@
+use crate::Error;
 use crate::error::TypesError;
 use alloc::vec::Vec;
 use bytes::{Bytes, BytesMut};
 use core::cmp::Ordering;
 use core::str::FromStr;
 use ethereum_types::{Bloom, H160, H256, U256};
+#[cfg(feature = "std")]
 use faster_hex::withpfx_lowercase;
 
 #[cfg(feature = "impl-serde")]
@@ -19,57 +21,34 @@ use crate::Error;
 
 const HEX_PREFIX: &str = "0x";
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg(feature = "impl-rlp")]
-#[derive(RlpEncodable, RlpDecodable)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+// #[cfg(feature = "impl-rlp")]
+// #[derive(RlpEncodable, RlpDecodable)]
 pub struct Hex(Bytes);
 
+// #[cfg(feature = "impl-rlp")]
 impl Hex {
-    pub fn empty() -> Self {
-        Hex(Bytes::default())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn encode<T: AsRef<[u8]>>(src: T) -> Self {
-        Hex(BytesMut::from(src.as_ref()).freeze())
-    }
-
-    pub fn as_string(&self) -> String {
-        HEX_PREFIX.to_string() + &hex_encode(self.0.as_ref())
-    }
-
-    pub fn as_string_trim0x(&self) -> String {
-        hex_encode(self.0.as_ref())
-    }
-
     pub fn as_bytes(&self) -> Bytes {
         self.0.clone()
     }
 
+    
     fn is_prefixed(s: &str) -> bool {
         s.starts_with(HEX_PREFIX)
     }
 }
 
-impl Default for Hex {
-    fn default() -> Self {
-        Hex(vec![0u8; 8].into())
+impl From<Vec<u8>> for Hex {
+    fn from(bytes: Vec<u8>) -> Self {
+        let bytes = Bytes::from(bytes);
+        Hex(bytes)
     }
 }
 
-impl AsRef<[u8]> for Hex {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
 
+#[cfg(
+    any(test, all(feature = "impl-serde", feature = "std")),
+)]
 impl FromStr for Hex {
     type Err = Error;
 
@@ -78,25 +57,14 @@ impl FromStr for Hex {
             return Err(crate::Error::HexPrefix);
         }
 
-        Ok(Hex(hex_decode(&s[2..])?.into()))
+        // Ok(Hex(hex_decode(&s[2..])?.into()))
+        Ok(Hex::from([0u8; 12].to_vec()))
     }
 }
 
-impl From<Hex> for Bytes {
-    fn from(bytes: Hex) -> Self {
-        bytes.0
-    }
-}
-
-impl Serialize for Hex {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::ser::Serializer,
-    {
-        withpfx_lowercase::serialize(&self.0, serializer)
-    }
-}
-
+#[cfg(
+    any(test, all(feature = "impl-serde", feature = "std")),
+)]
 impl<'de> Deserialize<'de> for Hex {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -104,6 +72,8 @@ impl<'de> Deserialize<'de> for Hex {
     {
         String::deserialize(deserializer)
             .and_then(|s| Hex::from_str(&s).map_err(serde::de::Error::custom))
+            // .and_then(|s| Ok(Hex::from_str(&s)))
+
     }
 }
 
@@ -146,7 +116,7 @@ pub type BlockNumber = u64;
 #[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExtraData {
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(
             serialize_with = "withpfx_lowercase::serialize",
             deserialize_with = "withpfx_lowercase::deserialize"
@@ -286,7 +256,7 @@ pub struct Proof {
     pub round:      u64,
     pub block_hash: Hash,
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(
             serialize_with = "withpfx_lowercase::serialize",
             deserialize_with = "withpfx_lowercase::deserialize"
@@ -294,7 +264,7 @@ pub struct Proof {
     )]
     pub signature:  Bytes,
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(
             serialize_with = "withpfx_lowercase::serialize",
             deserialize_with = "withpfx_lowercase::deserialize"
@@ -383,19 +353,25 @@ impl MetadataVersion {
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "impl-rlp",
+    all(feature = "impl-serde", feature = "std"),
     derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
 )]
-#[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    any(test, all(feature = "impl-serde", feature = "std")),
+    derive(serde::Deserialize)
+)]
 pub struct Metadata {
     pub version:          MetadataVersion,
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(deserialize_with = "decode::deserialize_hex_u64")
     )]
     pub epoch:            u64,
     pub verifier_list:    Vec<ValidatorExtend>,
-    #[serde(skip_deserializing)]
+    #[cfg_attr(
+        all(feature = "impl-serde", feature = "std"),
+        serde(skip_deserializing)
+    )]
     pub propose_counter:  Vec<ProposeCount>,
     pub consensus_config: ConsensusConfig,
 }
@@ -460,40 +436,46 @@ pub struct ProposeCount {
     pub count:   u64,
 }
 
-#[derive(Clone, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(
-    feature = "impl-rlp",
+    all(feature = "impl-serde", feature = "std"),
     derive(rlp_derive::RlpEncodable, rlp_derive::RlpDecodable)
 )]
-#[cfg_attr(feature = "impl-serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    any(test, all(feature = "impl-serde", feature = "std")),
+    derive(serde::Deserialize)
+)]
 pub struct ValidatorExtend {
     pub bls_pub_key:    Hex,
     pub pub_key:        Hex,
     pub address:        H160,
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(deserialize_with = "decode::deserialize_hex_u32")
     )]
     pub propose_weight: u32,
     #[cfg_attr(
-        feature = "impl-serde",
+        all(feature = "impl-serde", feature = "std"),
         serde(deserialize_with = "decode::deserialize_hex_u32")
     )]
     pub vote_weight:    u32,
 }
 
+// #[cfg(feature = "std")]
 impl PartialOrd for ValidatorExtend {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
+// #[cfg(feature = "std")]
 impl Ord for ValidatorExtend {
     fn cmp(&self, other: &Self) -> Ordering {
         self.pub_key.as_bytes().cmp(&other.pub_key.as_bytes())
     }
 }
 
+#[cfg(feature = "std")]
 impl From<ValidatorExtend> for Validator {
     fn from(ve: ValidatorExtend) -> Self {
         Validator {
@@ -504,6 +486,7 @@ impl From<ValidatorExtend> for Validator {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::fmt::Debug for ValidatorExtend {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let bls_pub_key = self.bls_pub_key.as_string_trim0x();

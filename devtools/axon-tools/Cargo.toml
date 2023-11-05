@@ -76,11 +76,12 @@ features = ["keccak"]
 
 [features]
 default = ["impl-serde", "proof"]
-proof = ["blst", "bit-vec", "cita_trie", "hash", "impl-rlp"]
+proof = ["blst", "bit-vec", "hash", "impl-rlp"]
 hash = ["tiny-keccak"]
 hex = ["faster-hex"]
 impl-rlp = ["rlp", "rlp-derive", "ethereum-types/rlp"]
-impl-serde = ["serde", "ethereum-types/serialize", "hex"]
+impl-serde = ["serde", "ethereum-types/serialize"]
+std = ["hex", "cita_trie"]
 
 [package.metadata.docs.rs]
 all-features = true

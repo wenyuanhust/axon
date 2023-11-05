@@ -3,7 +3,7 @@ use ethereum_types::H256;
 use std::fmt::{self, Display};
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum Error {
     InvalidProofBlockHash,
     NotEnoughSignatures,
@@ -16,9 +16,11 @@ pub enum Error {
 
     #[cfg(feature = "proof")]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
+    #[cfg(feature = "hex")]
     Bls(blst::BLST_ERROR),
 
     #[cfg(feature = "proof")]
+    #[cfg(feature = "std")]
     #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
     Trie(cita_trie::TrieError),
 }
@@ -32,14 +34,17 @@ impl From<faster_hex::Error> for Error {
 }
 
 #[cfg(feature = "proof")]
+#[cfg(feature = "hex")]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
 impl From<blst::BLST_ERROR> for Error {
     fn from(e: blst::BLST_ERROR) -> Self {
         Self::Bls(e)
+        // Error(HexPrefix)
     }
 }
 
 #[cfg(feature = "proof")]
+#[cfg(feature = "std")]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
 impl From<cita_trie::TrieError> for Error {
     fn from(e: cita_trie::TrieError) -> Self {
@@ -47,6 +52,7 @@ impl From<cita_trie::TrieError> for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -77,6 +83,7 @@ pub enum TypesError {
     TxHashMismatch { origin: H256, calc: H256 },
 
     #[display(fmt = "{:?}", _0)]
+    #[cfg(feature = "std")]
     FromHex(faster_hex::Error),
 
     #[display(fmt = "{:?} is an invalid address", _0)]

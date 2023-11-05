@@ -17,7 +17,9 @@ pub use error::Error;
 
 #[cfg(feature = "proof")]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "proof")))]
-pub use proof::{verify_proof, verify_trie_proof};
+pub use proof::verify_proof;
+#[cfg(feature = "std")]
+pub use proof::verify_trie_proof;
 
 #[cfg(feature = "hash")]
 #[cfg_attr(doc_cfg, doc(cfg(feature = "hash")))]

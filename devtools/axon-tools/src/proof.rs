@@ -7,11 +7,14 @@ use bytes::Bytes;
 use ethereum_types::H256;
 use rlp::Encodable;
 
+#[cfg(feature = "std")]
+use crate::hash::InnerKeccak;
 use crate::types::{AxonBlock, Proof, Proposal, ValidatorExtend, Vote};
-use crate::{error::Error, hash::InnerKeccak, keccak_256};
+use crate::{error::Error, keccak_256};
 
 const DST: &str = "BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RONUL";
 
+#[cfg(feature = "std")]
 pub fn verify_trie_proof(
     root: H256,
     key: &[u8],
@@ -61,15 +64,16 @@ pub fn verify_proof(
     let hash_vote = keccak_256(rlp::encode(&vote).as_ref());
     let pks = extract_pks(&proof, validator_list)?;
     let pks = pks.iter().collect::<Vec<_>>();
-    let c_pk = PublicKey::from_aggregate(&AggregatePublicKey::aggregate(&pks, true)?);
-    let sig = Signature::from_bytes(&proof.signature)?;
+    let c_pk = PublicKey::from_aggregate(&AggregatePublicKey::aggregate(&pks, true).unwrap());
+    let sig = Signature::from_bytes(&proof.signature).unwrap();
     let res = sig.verify(true, &hash_vote, DST.as_bytes(), &[], &c_pk, true);
 
     if res == BLST_ERROR::BLST_SUCCESS {
         return Ok(());
     }
 
-    Err(res.into())
+    // Err(res.into())
+    Err(Error::HexPrefix)
 }
 
 fn extract_pks(
@@ -87,7 +91,7 @@ fn extract_pks(
             continue;
         }
 
-        pks.push(PublicKey::from_bytes(&v.bls_pub_key.as_bytes())?);
+        pks.push(PublicKey::from_bytes(&v.bls_pub_key.as_bytes()).unwrap());
         count += 1;
     }
 

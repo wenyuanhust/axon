@@ -1,3 +1,4 @@
+#[cfg(feature = "std")]
 use crate::verify_trie_proof;
 use eth_light_client_in_ckb_prover::{encode_receipt, Receipts};
 use ethereum_types::{Bloom, H256, U256};
@@ -52,6 +53,7 @@ fn test_receipt() {
 }
 
 #[test]
+#[cfg(feature = "std")]
 fn test_verify_trie_proof() {
     let mut tx_receipts = Vec::<TransactionReceipt>::new();
 
